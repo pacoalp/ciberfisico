@@ -1,12 +1,12 @@
 """Simulación y análisis de lecturas IoT de calidad de agua.
 
 Genera un lote de observaciones de oxígeno disuelto (mg/L) y temperatura (°C)
-y reporta la media muestral de cada variable.
+y reporta media y desviación estándar muestral de cada variable.
 """
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,13 @@ COLUMNAS: Final[tuple[str, str, str]] = (
     "oxigeno_disuelto_mg_l",
     "temperatura_c",
 )
+
+
+class EstadisticosVariable(TypedDict):
+    """Parámetros muestrales de una variable numérica."""
+
+    media: float
+    desviacion_estandar: float
 
 
 def generar_lecturas(
@@ -59,30 +66,51 @@ def generar_lecturas(
     )
 
 
-def media_variables(df: pd.DataFrame) -> pd.Series:
-    """Media aritmética muestral: (1/n) * sum(x_i) por variable numérica.
+def media_variables(df: pd.DataFrame) -> dict[str, EstadisticosVariable]:
+    """Media y desviación estándar muestral por variable numérica.
 
-    Excluye timestamp. Si alguna columna numérica está vacía o es todo NaN,
-    Pandas devolverá NaN en esa media (skipna=True por defecto).
+    Media: (1/n) * sum(x_i).
+    Desviación estándar muestral (corrección de Bessel, ddof=1):
+        s = sqrt( 1/(n-1) * sum((x_i - media)^2) ).
+
+    Excluye timestamp. Con skipna=True, NaN se omiten. Si n < 2 o la
+    columna es todo NaN, la desviación estándar queda como NaN.
     """
     numericas = df.select_dtypes(include="number")
     if numericas.empty:
         raise ValueError("El DataFrame no contiene columnas numéricas.")
-    return numericas.mean()
+
+    medias = numericas.mean()
+    desviaciones = numericas.std(ddof=1)
+    return {
+        columna: EstadisticosVariable(
+            media=float(medias[columna]),
+            desviacion_estandar=float(desviaciones[columna]),
+        )
+        for columna in numericas.columns
+    }
 
 
 def main() -> None:
     lecturas = generar_lecturas()
-    medias = media_variables(lecturas)
+    estadisticos = media_variables(lecturas)
+    oxigeno = estadisticos[COLUMNAS[1]]
+    temperatura = estadisticos[COLUMNAS[2]]
 
     print("Lecturas simuladas del sensor de calidad de agua")
     print(lecturas.to_string(index=False))
     print()
-    print("Medias muestrales")
+    print("Estadísticos muestrales")
     print(
-        f"  oxígeno disuelto: {medias[COLUMNAS[1]]:.2f} mg/L"
+        "  oxígeno disuelto: "
+        f"media {oxigeno['media']:.2f} mg/L, "
+        f"s {oxigeno['desviacion_estandar']:.2f} mg/L"
     )
-    print(f"  temperatura:      {medias[COLUMNAS[2]]:.2f} °C")
+    print(
+        "  temperatura:      "
+        f"media {temperatura['media']:.2f} °C, "
+        f"s {temperatura['desviacion_estandar']:.2f} °C"
+    )
 
 
 if __name__ == "__main__":
